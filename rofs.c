@@ -72,13 +72,18 @@ static int rofs_getattr(const char *path, struct stat *st_data)
 		
 		printf("This is an html file\n");
 		fd = open(upath, O_RDONLY);
-		char *target = malloc(sizeof(char)*size);
+		char *target = malloc(sizeof(char)*size); // intermediate buffer, to manipulate html
 		close(fd);
 		res = pread(fd, target, size, offset);
-		TidyDoc tdoc = tidyCreate();                     // Initialize "document"
+		TidyDoc tdoc = tidyCreate();                
 	
-		tidyOptSetBool( tdoc, TidyXhtmlOut, yes );  // Convert to XHTML
-
+		tidyOptSetBool( tdoc, TidyXhtmlOut, yes );  
+		tidyOptSetBool( tdoc, TidyIndentContent, yes );
+		
+		if(tidyFileExists(tdoc,"/home/meteb/Desktop/projectFuse/config.txt")){
+			tidyLoadConfig(tdoc,"/home/meteb/Desktop/projectFuse/config.txt");
+		}
+		printf( "%d\n",tidyConfigErrorCount(tdoc));
 		rc = tidySetErrorBuffer( tdoc, &errbuf );    
 		rc = tidyParseString( tdoc, target );           
 		rc = tidyCleanAndRepair( tdoc );               
@@ -148,83 +153,6 @@ static int rofs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,off_
     return 0;
 }
 
-static int rofs_mknod(const char *path, mode_t mode, dev_t rdev)
-{
-    (void)path;
-    (void)mode;
-    (void)rdev;
-    return -EROFS;
-}
-
-static int rofs_mkdir(const char *path, mode_t mode)
-{
-    (void)path;
-    (void)mode;
-    return -EROFS;
-}
-
-static int rofs_unlink(const char *path)
-{
-    (void)path;
-    return -EROFS;
-}
-
-static int rofs_rmdir(const char *path)
-{
-    (void)path;
-    return -EROFS;
-}
-
-static int rofs_symlink(const char *from, const char *to)
-{
-    (void)from;
-    (void)to;
-    return -EROFS;
-}
-
-static int rofs_rename(const char *from, const char *to)
-{
-    (void)from;
-    (void)to;
-    return -EROFS;
-}
-
-static int rofs_link(const char *from, const char *to)
-{
-    (void)from;
-    (void)to;
-    return -EROFS;
-}
-
-static int rofs_chmod(const char *path, mode_t mode)
-{
-    (void)path;
-    (void)mode;
-    return -EROFS;
-
-}
-
-static int rofs_chown(const char *path, uid_t uid, gid_t gid)
-{
-    (void)path;
-    (void)uid;
-    (void)gid;
-    return -EROFS;
-}
-
-static int rofs_truncate(const char *path, off_t size)
-{
-    (void)path;
-    (void)size;
-    return -EROFS;
-}
-
-static int rofs_utime(const char *path, struct utimbuf *buf)
-{
-    (void)path;
-    (void)buf;
-    return -EROFS;
-}
 
 static int rofs_open(const char *path, struct fuse_file_info *finfo)
 {
@@ -273,36 +201,51 @@ static int rofs_read(const char *path, char *buf, size_t size, off_t offset, str
   
 
     
-    char *target = malloc(sizeof(char)*size);
-    res = pread(fd, target, size, offset);
-    close(fd);
+
     
     ////// sondan bir önceki karakter \n
-	 
-	
-    TidyDoc tdoc = tidyCreate();                     // Initialize "document"
-	
-	tidyOptSetBool( tdoc, TidyXhtmlOut, yes );  // Convert to XHTML
-
-    rc = tidySetErrorBuffer( tdoc, &errbuf );    
-    rc = tidyParseString( tdoc, target );           
-    rc = tidyCleanAndRepair( tdoc );               
-    rc = tidyRunDiagnostics( tdoc );               
-    rc = ( tidyOptSetBool(tdoc, TidyForceOutput, yes) ? rc : -1 );
-    rc = tidySaveBuffer( tdoc, &output ); 
-    
-	memcpy(buf,output.bp + offset,strlen(output.bp)+2);
-	res = strlen(output.bp) - offset;
-	buf[res] = '\n';
-	buf[res+1] = '\0';
-	printf("%s\n",buf);
-
+	int i = 0,index = 0;
+	for(i = 0 ; i < strlen(path); ++i){
+		if(path[i] == '.'){
+			index = i;
+		}
+	}
+	if(!strcmp(path+index+1, "html")){
+		char *target = malloc(sizeof(char)*size); // intermediate buffer, to manipulate html
+		res = pread(fd, target, size, offset);
+		close(fd);
+		TidyDoc tdoc = tidyCreate();                
+		
+		tidyOptSetBool( tdoc, TidyXhtmlOut, yes );  
+		tidyOptSetBool( tdoc, TidyIndentContent, yes );
+		if(tidyFileExists(tdoc,"/home/meteb/Desktop/projectFuse/config.txt")){
+			tidyLoadConfig(tdoc,"/home/meteb/Desktop/projectFuse/config.txt");
+		}
+		
+		rc = tidySetErrorBuffer( tdoc, &errbuf );     
+		rc = tidyParseString( tdoc, target );           
+		rc = tidyCleanAndRepair( tdoc );               
+		rc = tidyRunDiagnostics( tdoc );               
+		rc = ( tidyOptSetBool(tdoc, TidyForceOutput, yes) ? rc : -1 );
+		
+		rc = tidySaveBuffer( tdoc, &output ); 
+			printf("%s\n",output.bp);
+		memcpy(buf,output.bp + offset,strlen(output.bp)+2);
+		res = strlen(output.bp) - offset;
+		buf[res] = '\n';
+		buf[res+1] = '\0';
+		free(target);
+	}
+	else {
+		res = pread(fd, buf, size, offset);
+		close(fd);
+	}
 
     if(res == -1) {
         res = -errno;
     }
-    free(target);
- 
+  
+	
     return res;
 }
 
@@ -329,21 +272,6 @@ static int rofs_statfs(const char *path, struct statvfs *st_buf)
     return 0;
 }
 
-static int rofs_release(const char *path, struct fuse_file_info *finfo)
-{
-    (void) path;
-    (void) finfo;
-    return 0;
-}
-
-static int rofs_fsync(const char *path, int crap, struct fuse_file_info *finfo)
-{
-    (void) path;
-    (void) crap;
-    (void) finfo;
-    return 0;
-}
-
 static int rofs_access(const char *path, int mode)
 {
     int res;
@@ -363,91 +291,17 @@ static int rofs_access(const char *path, int mode)
     return res;
 }
 
-/*
- * Set the value of an extended attribute
- */
-static int rofs_setxattr(const char *path, const char *name, const char *value, size_t size, int flags)
-{
-    (void)path;
-    (void)name;
-    (void)value;
-    (void)size;
-    (void)flags;
-    return -EROFS;
-}
-
-/*
- * Get the value of an extended attribute.
- */
-static int rofs_getxattr(const char *path, const char *name, char *value, size_t size)
-{
-    int res;
-
-    char *upath=translate_path(path);
-    res = lgetxattr(upath, name, value, size);
-    free(upath);
-    if(res == -1) {
-        return -errno;
-    }
-    return res;
-}
-
-/*
- * List the supported extended attributes.
- */
-static int rofs_listxattr(const char *path, char *list, size_t size)
-{
-    int res;
-
-    char *upath=translate_path(path);
-    res = llistxattr(upath, list, size);
-    free(upath);
-    if(res == -1) {
-        return -errno;
-    }
-    return res;
-
-}
-
-/*
- * Remove an extended attribute.
- */
-static int rofs_removexattr(const char *path, const char *name)
-{
-    (void)path;
-    (void)name;
-    return -EROFS;
-
-}
 
 struct fuse_operations rofs_oper = {
     .getattr     = rofs_getattr,
     .readlink    = rofs_readlink,
     .readdir     = rofs_readdir,
-    .mknod       = rofs_mknod,
-    .mkdir       = rofs_mkdir,
-    .symlink     = rofs_symlink,
-    .unlink      = rofs_unlink,
-    .rmdir       = rofs_rmdir,
-    .rename      = rofs_rename,
-    .link        = rofs_link,
-    .chmod       = rofs_chmod,
-    .chown       = rofs_chown,
-    .truncate    = rofs_truncate,
-    .utime       = rofs_utime,
     .open        = rofs_open,
     .read        = rofs_read,
     .write       = rofs_write,
     .statfs      = rofs_statfs,
-    .release     = rofs_release,
-    .fsync       = rofs_fsync,
     .access      = rofs_access,
 
-    /* Extended attributes support for userland interaction */
-    .setxattr    = rofs_setxattr,
-    .getxattr    = rofs_getxattr,
-    .listxattr   = rofs_listxattr,
-    .removexattr = rofs_removexattr
 };
 enum {
     KEY_HELP,

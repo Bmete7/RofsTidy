@@ -1,0 +1,2 @@
+// sample config file for HTML tidy
+indent-spaces: 4
